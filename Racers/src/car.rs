@@ -1,8 +1,10 @@
-use std::f32::consts::PI;
+use crate::utils::{find_line_eq, lerp, to_rad};
+use core::f32;
 use macroquad::prelude::*;
 use macroquad::texture::Texture2D;
-use crate::utils::{to_rad, lerp};
+use std::f32::consts::PI;
 
+use crate::track::Track;
 use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
 
 // consts
@@ -39,29 +41,27 @@ pub struct Input {
     default: f32,
 }
 
-
 impl Car {
     pub const HITBOX_WIDTH: f32 = 30.0;
     pub const HITBOX_HEIGHT: f32 = 60.0;
     pub const MAX_RPM: f32 = 10000.0;
     pub const MAX_SPEED: f32 = 350.0;
-    pub const MAX_TURNING_ANGLE: f32 = (40.0 / 180.0 ) * PI;
+    pub const MAX_TURNING_ANGLE: f32 = (40.0 / 180.0) * PI;
     pub const MAX_ACC: f32 = 400.0;
-    pub const STEER_WEIGHT: f32 = PI/6.0;
+    pub const STEER_WEIGHT: f32 = PI / 6.0;
     pub const MASS: f32 = 40.0;
     pub const BRAKING_FACTOR: f32 = 0.9;
-
 
     pub fn new() -> Self {
         // default car setup
         let mut car: Self = Self {
-            texture: Texture2D::from_file_with_format(
-                include_bytes!("../assets/car.png"),
-                None,
-            ),
-            
+            texture: Texture2D::from_file_with_format(include_bytes!("../assets/car.png"), None),
+
             // Defining Vector
-            position: Vec2::new(crate::WINDOW_WIDTH as f32 / 2.0, crate::WINDOW_HEIGHT as f32 / 2.0),
+            position: Vec2::new(
+                crate::WINDOW_WIDTH as f32 / 2.0,
+                crate::WINDOW_HEIGHT as f32 / 2.0,
+            ),
             velocity: Vec2::ZERO,
             direction: Vec2::ZERO,
             acceleration: Vec2::ZERO,
@@ -76,7 +76,12 @@ impl Car {
             // inputs
             accelerator_input: Input::new_default(),
             brakes_input: Input::new_default(),
-            steering_input: Input {min: -1.0, max: 1.0, weight: 0.0, default: 0.0},    
+            steering_input: Input {
+                min: -1.0,
+                max: 1.0,
+                weight: 0.0,
+                default: 0.0,
+            },
         };
         car.direction = Vec2::from_angle(car.angle);
         return car;
@@ -88,19 +93,18 @@ impl Car {
         let h: f32 = self.rect.h;
         let x: f32 = self.rect.x;
         let y: f32 = self.rect.y;
-        let params: DrawTextureParams = DrawTextureParams{
+        let params: DrawTextureParams = DrawTextureParams {
             dest_size: Some(Vec2::new(w, h)),
-            source:  None,
+            source: None,
             flip_x: false,
             flip_y: false,
-            rotation: self.angle + PI/2.0,
+            rotation: self.angle + PI / 2.0,
             pivot: None,
         };
         draw_texture_ex(&self.texture, x, y, WHITE, params);
     }
 
-    pub fn update_pos(&mut self, x: f32, y: f32) { 
-
+    pub fn update_pos(&mut self, x: f32, y: f32) {
         // way to safely change position
         let x = clamp(x, 0.0, WINDOW_WIDTH as f32 - Car::HITBOX_WIDTH); // keep the car on the screen
         let y = clamp(y, 0.0, WINDOW_HEIGHT as f32 - Car::HITBOX_HEIGHT);
@@ -123,7 +127,7 @@ impl Car {
 
         self.acceleration = self.direction * (self.accelerator_input.weight * Car::MAX_ACC);
         self.velocity += self.acceleration * dt;
-       
+
         let brake_friction = -self.velocity * self.brakes_input.weight * Car::BRAKING_FACTOR;
         self.velocity += brake_friction * dt;
 
@@ -140,9 +144,28 @@ impl Car {
         self.steering_input.weight = 0.0;
     }
 
+    pub fn get_sector(&self, track: &Track) -> i32 {
+        let mut closest_sector = 0;
+        let mut shortest_distance: f32 = f32::MAX;
+
+        for i in 0..track.get_points().len() {
+            // calculate the midpoint
+            let p1 = track.get_points()[i];
+            let p2 = track.get_points()[(i + 1) % track.get_points().len()];
+            let mp = (p1 + p2) / 2.0;
+
+            let center = self.rect.center();
+            let distance = mp.distance(center);
+            if distance < shortest_distance {
+                shortest_distance = distance;
+                closest_sector = i as i32;
+            }
+        }
+        return closest_sector;
+    }
 
     fn keyboard_control(&mut self) {
-        // loop through keys 
+        // loop through keys
         for key in get_keys_down() {
             if (key == KeyCode::Up) {
                 self.accelerator_input.weight = 1.0;
@@ -162,9 +185,32 @@ impl Car {
             self.velocity = ((self.velocity) / self.velocity.length()) * Car::MAX_SPEED;
         }
     }
+
+    pub fn is_on_track(&self, track: &Track) -> bool {
+        // find the current sector
+        let sector: usize = self.get_sector(track) as usize;
+
+        // find the sector line equation
+        let points = track.get_points();
+        let p1 = points[sector];
+        let p2 = points[(sector + 1) % points.len()];
+        let coef_vec = find_line_eq(p1.x, p1.y, p2.x, p2.y);
+        let a = coef_vec.x;
+        let b = 1.0;
+        let c = coef_vec.y;
+
+        // use the formula for distance
+        let center = self.rect.center();
+        let distance = (a * center.x + b * center.y + c).abs() / (a * a + b * b).sqrt();
+
+        if distance > (track.get_width() / 2.0) {
+            // off the track
+            return false;
+        }
+
+        return true;
+    }
 }
-
-
 
 impl Input {
     pub fn new_default() -> Self {
