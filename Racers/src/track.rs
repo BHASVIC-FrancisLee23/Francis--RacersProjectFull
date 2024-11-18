@@ -45,7 +45,12 @@ impl Track {
             let p1 = self.points_set[i];
             let p2 = self.points_set[(i + 1) % self.points_set.len()];
 
+            let mp = (p1 + p2) / 2.0;
+
             draw_thick_line(p1.x, p1.y, p2.x, p2.y, self.track_width, tarmac_colour);
+            if i == 0 {
+                draw_circle(mp.x, mp.y, 8.0, WHITE);
+            }
         }
         // draw the checkpoints
         self.draw_checkpoints();
@@ -85,5 +90,10 @@ impl Track {
                 checkpoint_colour,
             );
         }
+    }
+
+    pub fn get_start_pos(&self) -> Vec2 {
+        let pos = self.points_set[0];
+        return pos;
     }
 }

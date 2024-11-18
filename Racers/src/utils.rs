@@ -38,3 +38,33 @@ pub fn find_line_eq(x1: f32, y1: f32, x2: f32, y2: f32) -> Vec2 {
     // the Vec2 will return (a, c) in this form
     return vec2(a, c);
 }
+
+pub fn line_intersection(p1: Vec2, p2: Vec2, q1: Vec2, q2: Vec2) -> Option<Vec2> {
+    let t = ((p1.x - q1.x) * (q1.y - q2.y) - (p1.y - q1.y) * (q1.x - q2.x))
+        / ((p1.x - p2.x) * (q1.y - q2.y) - (p1.y - p2.y) * (q1.x - q2.x));
+
+    let u = -(((p1.x - p2.x) * (p1.y - q1.y) - (p1.y - p2.y) * (p1.x - q1.x))
+        / ((p1.x - p2.x) * (q1.y - q2.y) - (p1.y - p2.y) * (q1.x - q2.x)));
+
+    if (0.0 <= t && t <= 1.0) && (0.0 <= u && u <= 1.0) {
+        let point_intersection = vec2(q1.x + u * (q2.x - q1.x), q1.y + u * (q2.y - q1.y));
+        return Some(point_intersection);
+    }
+
+    None
+}
+
+/*
+let s1 = self.rect.center();
+let s2 = s1 + ray_direction * WINDOW_WIDTH as f32 * 5.0;
+
+draw_line(s1.x, s1.y, s2.x, s2.y, 3.0, RED);
+
+
+let u = -(((s1.x - s2.x) * (s1.y - A.y) - (s1.y - s2.y) * (s1.x - A.x))
+    / ((s1.x - s2.x) * (A.y - B.y) - (s1.y - s2.y) * (A.x - B.x)));
+
+let point_intersection = vec2(A.x + u * (B.x - A.x), A.y + u * (B.y - A.y));
+if (0.0 <= u && u <= 1.0) && (0.0 <= t && t <= 1.0) {
+    draw_circle(point_intersection.x, point_intersection.y, 6.0, PINK);
+}*/

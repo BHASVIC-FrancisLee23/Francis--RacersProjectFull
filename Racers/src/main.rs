@@ -1,8 +1,10 @@
 use car::Car;
 use macroquad::prelude::*;
-use track::{test_track1, Track};
+use population::Population;
 
 pub mod car;
+pub mod network;
+pub mod population;
 pub mod track;
 pub mod utils;
 
@@ -23,14 +25,14 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let mut car1: Car = Car::new();
-    let mut track: Track = Track::new(test_track1, 75.0);
+    macroquad::rand::srand(macroquad::miniquad::date::now() as _);
+
+    let mut population = Population::new(3);
     loop {
         clear_background(GREEN);
-        car1.update();
 
-        track.draw();
-        car1.draw();
+        population.update();
+        population.draw();
 
         next_frame().await
     }
