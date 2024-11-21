@@ -1,6 +1,7 @@
 use core::f64;
 use std::iter;
 
+#[derive(Clone)]
 pub struct Layer {
     pub weights: Vec<Vec<f64>>,
     pub bias: Vec<f64>,
@@ -8,6 +9,7 @@ pub struct Layer {
     pub output: Option<Vec<f64>>,
 }
 
+#[derive(Clone)]
 pub struct Network {
     pub layers: Vec<Layer>,
 }
@@ -59,9 +61,6 @@ impl Layer {
             let val = macroquad::rand::gen_range(0.25, -0.25);
             bias.push(val);
         }
-
-        println!("WEIGHTS: \n {:?}", weights);
-        println!("BIAS: \n {:?}", bias);
 
         return Self::new(weights, bias, activation);
     }

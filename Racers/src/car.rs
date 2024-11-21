@@ -1,10 +1,10 @@
 use crate::network::*;
+use crate::population::GENERATION_TIME;
 use crate::utils::{find_line_eq, lerp, line_intersection, to_rad};
 use core::f32;
 use macroquad::prelude::*;
 use macroquad::texture::Texture2D;
 use std::f32::consts::PI;
-use std::sync::Arc;
 
 use crate::track::Track;
 use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
@@ -13,6 +13,7 @@ use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
 const FRIC_COEF_ROAD: f32 = 0.88;
 const FRIC_COEF_GRASS: f32 = 0.08;
 
+#[derive(Clone)]
 pub struct Car {
     // Physics variables
     // -- Vectors
@@ -29,15 +30,25 @@ pub struct Car {
     rect: Rect,
 
     // network
-    brain: Network,
+    pub brain: Network,
 
     // inputs for controllers
     accelerator_input: Input,
     steering_input: Input, // radians
     brakes_input: Input,
+
+    // others
+    pub crashed: bool,
+    pub fitness: i32,
+
+    // stats
+    cumulative_speed: f32,
+    timer: i32,
+    prev_checkpoint: usize,
+    pub laps: usize,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Input {
     min: f32,
     weight: f32,
@@ -54,13 +65,14 @@ impl Car {
     pub const STEER_WEIGHT: f32 = PI / 6.0;
     pub const MASS: f32 = 40.0;
     pub const BRAKING_FACTOR: f32 = 0.9;
-    const RAYS: usize = 12;
+    const RAYS: usize = 20;
 
     pub fn new(start_pos: Vec2) -> Self {
         // default car setup
         let mut brain = Network::new_empty();
         brain = brain
-            .add_layer(Layer::new_random(6 + Car::RAYS, 8, None))
+            .add_layer(Layer::new_random(6 + Car::RAYS, 12, None))
+            .add_layer(Layer::new_random(12, 8, None))
             .add_layer(Layer::new_random(8, 5, None))
             .add_layer(Layer::new_random(5, 3, Some(sigmoid)));
 
@@ -95,6 +107,15 @@ impl Car {
                 weight: 0.0,
                 default: 0.0,
             },
+
+            crashed: false,
+            fitness: 0,
+
+            // stats
+            cumulative_speed: 0.0,
+            timer: 0,
+            prev_checkpoint: 0,
+            laps: 0,
         };
         car.direction = Vec2::from_angle(car.angle);
         return car;
@@ -117,6 +138,64 @@ impl Car {
         draw_texture_ex(&self.texture, x, y, WHITE, params);
     }
 
+    fn toll_fitness(&mut self, track: &Track) {
+        if !self.crashed {
+            // increase fitness while not crashed
+            self.fitness += 1;
+
+            // increase
+            self.cumulative_speed += self.velocity.length();
+
+            let sector = self.get_sector(track);
+
+            let last_sector = track.get_points().len() - 1;
+
+            // if reached a NEXT checkpoint
+            if sector == (self.prev_checkpoint as i32 + 1) {
+                self.prev_checkpoint += 1;
+
+                let sector_time: i32 = self.timer;
+                let speed_bonus = (500000.0 * (1.0 / (sector_time as f32).powf(2.0))) as i32;
+                self.fitness += speed_bonus;
+                self.timer = 0;
+            } else if (sector == 0 && self.prev_checkpoint == last_sector) {
+                // done a lap
+                self.fitness += 2000; // bonus
+                let sector_time = self.timer;
+                let speed_bonus = (300000.0 * (1.0 / (sector_time as f32).powf(1.5))) as i32;
+                self.fitness += speed_bonus;
+                self.prev_checkpoint = 0;
+
+                self.timer = 0;
+
+                self.laps += 1;
+            } else {
+                if self.prev_checkpoint == 0 && sector == last_sector as i32 {
+                    // gone backwards past the finish line
+                    self.timer = 0;
+                    self.prev_checkpoint = last_sector;
+                    self.fitness -= 5000; // DONT GO BACKWARDS
+                } else if sector < self.prev_checkpoint as i32 {
+                    // going backwards
+                    self.timer = 0;
+                    self.prev_checkpoint = sector as usize;
+                    self.fitness -= 5000;
+                }
+            }
+        }
+    }
+
+    pub fn get_final_fitness(&self) -> i32 {
+        let mut fitness = self.fitness;
+        if self.crashed {
+            fitness -= 100000;
+        }
+        let avg_speed = self.cumulative_speed as i32 / GENERATION_TIME as i32;
+        fitness += avg_speed * 1000;
+
+        return fitness;
+    }
+
     pub fn update_pos(&mut self, x: f32, y: f32) {
         // way to safely change position
         let x = clamp(x, 0.0, WINDOW_WIDTH as f32 - Car::HITBOX_WIDTH); // keep the car on the screen
@@ -128,6 +207,12 @@ impl Car {
     }
 
     pub fn update(&mut self, track: &Track) {
+        self.toll_fitness(track);
+
+        if self.crashed == true {
+            return;
+        }
+
         let dt = get_frame_time();
 
         // run the neural network with inputs
@@ -179,6 +264,9 @@ impl Car {
         self.brakes_input.weight = 0.0;
         self.accelerator_input.weight = 0.0;
         self.steering_input.weight = 0.0;
+
+        // increment time
+        self.timer += 1;
     }
 
     pub fn get_sector(&self, track: &Track) -> i32 {
@@ -189,10 +277,12 @@ impl Car {
             // calculate the midpoint
             let p1 = track.get_points()[i];
             let p2 = track.get_points()[(i + 1) % track.get_points().len()];
+
             let mp = (p1 + p2) / 2.0;
 
             let center = self.rect.center();
             let distance = mp.distance(center);
+
             if distance < shortest_distance {
                 shortest_distance = distance;
                 closest_sector = i as i32;
@@ -304,21 +394,6 @@ impl Car {
             }
         }
 
-        draw_line(
-            s1.x,
-            s1.y,
-            shortest_interection_point.x,
-            shortest_interection_point.y,
-            3.0,
-            RED,
-        );
-        draw_circle(
-            shortest_interection_point.x,
-            shortest_interection_point.y,
-            4.0,
-            RED,
-        );
-
         shortest_distance
     }
 
@@ -340,6 +415,24 @@ impl Car {
         }
 
         return ray_list;
+    }
+
+    pub fn crashed(&mut self) {
+        self.crashed = true;
+    }
+
+    pub fn reset(&mut self, position: Vec2) {
+        self.position = position;
+        self.acceleration = Vec2::ZERO;
+        self.velocity = Vec2::ZERO;
+        self.angle = 0.0;
+        self.steer = 0.0;
+        self.direction = Vec2::ZERO;
+        self.accelerator_input.weight = 0.0;
+        self.brakes_input.weight = 0.0;
+        self.steering_input.weight = 0.0;
+        self.update_pos(self.position.x, self.position.y);
+        self.crashed = false;
     }
 }
 

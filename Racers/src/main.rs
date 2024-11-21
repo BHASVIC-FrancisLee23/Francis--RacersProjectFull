@@ -27,7 +27,7 @@ fn window_conf() -> Conf {
 async fn main() {
     macroquad::rand::srand(macroquad::miniquad::date::now() as _);
 
-    let mut population = Population::new(3);
+    let mut population = Population::new(100);
     loop {
         clear_background(GREEN);
 

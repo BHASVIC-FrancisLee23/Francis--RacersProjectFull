@@ -94,6 +94,8 @@ impl Track {
 
     pub fn get_start_pos(&self) -> Vec2 {
         let pos = self.points_set[0];
-        return pos;
+        let pos1 = self.points_set[1];
+
+        return (pos + pos1) / 2.0;
     }
 }
