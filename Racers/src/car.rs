@@ -11,7 +11,9 @@ use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
 
 // consts
 const FRIC_COEF_ROAD: f32 = 0.88;
-const FRIC_COEF_GRASS: f32 = 0.08;
+
+// colours
+const TRANSPARENT_COLOUR: Color = color_u8!(255,255, 255, 50);
 
 #[derive(Clone)]
 pub struct Car {
@@ -121,7 +123,11 @@ impl Car {
         return car;
     }
 
-    pub fn draw(&self) {
+    pub fn draw(&self, best: bool) {
+        let mut draw_colour = WHITE;
+        if (self.crashed) {draw_colour = TRANSPARENT_COLOUR;}
+        if (best) {draw_colour = color_u8!(255,215,0, 255);}
+
         // just draws to the screen
         let w: f32 = self.rect.w;
         let h: f32 = self.rect.h;
@@ -135,63 +141,64 @@ impl Car {
             rotation: self.angle + PI / 2.0,
             pivot: None,
         };
-        draw_texture_ex(&self.texture, x, y, WHITE, params);
+        draw_texture_ex(&self.texture, x, y, draw_colour, params);
     }
 
     fn toll_fitness(&mut self, track: &Track) {
         if !self.crashed {
             // increase fitness while not crashed
             self.fitness += 1;
+        }
 
-            // increase
-            self.cumulative_speed += self.velocity.length();
+        self.cumulative_speed += self.velocity.length();
 
-            let sector = self.get_sector(track);
+        let sector = self.get_sector(track);
 
-            let last_sector = track.get_points().len() - 1;
+        let last_sector = track.get_points().len() - 1;
 
-            // if reached a NEXT checkpoint
-            if sector == (self.prev_checkpoint as i32 + 1) {
-                self.prev_checkpoint += 1;
+        // if reached a NEXT checkpoint
+        if sector == (self.prev_checkpoint as i32 + 1) {
+            self.prev_checkpoint += 1;
+            let sector_time: i32 = self.timer;
+            
+            let speed_bonus = (300000.0 * (1.0 / (sector_time as f32).powf(2.0))) as i32;
+            self.fitness += speed_bonus + 1000;
+            self.timer = 0;
+        } else if (sector == 0 && self.prev_checkpoint == last_sector) {
+            // done a lap
+            self.fitness += 2000; // bonus
+            let sector_time = self.timer;
+            let speed_bonus = (300000.0 * (1.0 / (sector_time as f32).powf(1.5))) as i32;
+            self.fitness += speed_bonus;
+            self.prev_checkpoint = 0;
 
-                let sector_time: i32 = self.timer;
-                let speed_bonus = (500000.0 * (1.0 / (sector_time as f32).powf(2.0))) as i32;
-                self.fitness += speed_bonus;
+            self.timer = 0;
+
+            self.laps += 1;
+        } else {
+            if self.prev_checkpoint == 0 && sector == last_sector as i32 {
+                // gone backwards past the finish line
                 self.timer = 0;
-            } else if (sector == 0 && self.prev_checkpoint == last_sector) {
-                // done a lap
-                self.fitness += 2000; // bonus
-                let sector_time = self.timer;
-                let speed_bonus = (300000.0 * (1.0 / (sector_time as f32).powf(1.5))) as i32;
-                self.fitness += speed_bonus;
-                self.prev_checkpoint = 0;
-
+                self.prev_checkpoint = last_sector;
+                self.fitness -= 5000; // DONT GO BACKWARDS
+            } else if sector < self.prev_checkpoint as i32 {
+                // going backwards
                 self.timer = 0;
-
-                self.laps += 1;
-            } else {
-                if self.prev_checkpoint == 0 && sector == last_sector as i32 {
-                    // gone backwards past the finish line
-                    self.timer = 0;
-                    self.prev_checkpoint = last_sector;
-                    self.fitness -= 5000; // DONT GO BACKWARDS
-                } else if sector < self.prev_checkpoint as i32 {
-                    // going backwards
-                    self.timer = 0;
-                    self.prev_checkpoint = sector as usize;
-                    self.fitness -= 5000;
-                }
+                self.prev_checkpoint = sector as usize;
+                self.fitness -= 5000;
             }
         }
-    }
+            
+        }
+    
 
     pub fn get_final_fitness(&self) -> i32 {
         let mut fitness = self.fitness;
         if self.crashed {
-            fitness -= 100000;
+            fitness -= 50000;
         }
         let avg_speed = self.cumulative_speed as i32 / GENERATION_TIME as i32;
-        fitness += avg_speed * 1000;
+        fitness += avg_speed * 500;
 
         return fitness;
     }

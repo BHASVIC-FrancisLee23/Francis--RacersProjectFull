@@ -34,10 +34,28 @@ impl Population {
 
     pub fn draw(&self) {
         self.track.draw();
-        // cast rays
-        for car in self.cars.iter() {
-            car.draw();
+        
+        // find best performer
+        let mut best_fitness = -1000000;
+        let mut best_index = 0;
+        for i in 0..self.cars.len() {
+            if self.cars[i].fitness > best_fitness {
+                best_fitness = self.cars[i].fitness;
+                best_index = i;
+            }
         }
+
+        // draw cars
+        for i in 0..self.cars.len() {
+            let car = &self.cars[i];
+            if i == best_index {
+                car.draw(true);
+            } else {
+                car.draw(false);
+
+            }
+        }
+
     }
 
     pub fn update(&mut self) {
