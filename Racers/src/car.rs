@@ -10,10 +10,11 @@ use crate::track::Track;
 use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
 
 // consts
-const FRIC_COEF_ROAD: f32 = 0.88;
+const FRIC_COEF: f32 = 0.88;
+const LAT_FRIC_COEF: f32 = 0.9;
 
 // colours
-const TRANSPARENT_COLOUR: Color = color_u8!(255,255, 255, 50);
+const TRANSPARENT_COLOUR: Color = color_u8!(255, 255, 255, 50);
 
 #[derive(Clone)]
 pub struct Car {
@@ -125,8 +126,12 @@ impl Car {
 
     pub fn draw(&self, best: bool) {
         let mut draw_colour = WHITE;
-        if (self.crashed) {draw_colour = TRANSPARENT_COLOUR;}
-        if (best) {draw_colour = color_u8!(255,215,0, 255);}
+        if (self.crashed) {
+            draw_colour = TRANSPARENT_COLOUR;
+        }
+        if (best) {
+            draw_colour = color_u8!(255, 215, 0, 255);
+        }
 
         // just draws to the screen
         let w: f32 = self.rect.w;
@@ -160,16 +165,17 @@ impl Car {
         if sector == (self.prev_checkpoint as i32 + 1) {
             self.prev_checkpoint += 1;
             let sector_time: i32 = self.timer;
-            
-            let speed_bonus = (300000.0 * (1.0 / (sector_time as f32).powf(2.0))) as i32;
-            self.fitness += speed_bonus + 1000;
+
+            let speed_bonus = (60000.0 * (1.0 / (sector_time as f32).powf(2.0))) as i32;
+            self.fitness += 1000 + speed_bonus;
             self.timer = 0;
         } else if (sector == 0 && self.prev_checkpoint == last_sector) {
             // done a lap
             self.fitness += 2000; // bonus
             let sector_time = self.timer;
-            let speed_bonus = (300000.0 * (1.0 / (sector_time as f32).powf(1.5))) as i32;
+            let speed_bonus = (60000.0 * (1.0 / (sector_time as f32).powf(1.5))) as i32;
             self.fitness += speed_bonus;
+            //self.fitness += speed_bonus;
             self.prev_checkpoint = 0;
 
             self.timer = 0;
@@ -180,17 +186,15 @@ impl Car {
                 // gone backwards past the finish line
                 self.timer = 0;
                 self.prev_checkpoint = last_sector;
-                self.fitness -= 5000; // DONT GO BACKWARDS
+                self.fitness -= 10000; // DONT GO BACKWARDS
             } else if sector < self.prev_checkpoint as i32 {
                 // going backwards
                 self.timer = 0;
                 self.prev_checkpoint = sector as usize;
-                self.fitness -= 5000;
+                self.fitness -= 10000;
             }
         }
-            
-        }
-    
+    }
 
     pub fn get_final_fitness(&self) -> i32 {
         let mut fitness = self.fitness;
@@ -198,7 +202,7 @@ impl Car {
             fitness -= 50000;
         }
         let avg_speed = self.cumulative_speed as i32 / GENERATION_TIME as i32;
-        fitness += avg_speed * 500;
+        fitness += avg_speed * 3;
 
         return fitness;
     }
@@ -260,10 +264,16 @@ impl Car {
         let brake_friction = -self.velocity * self.brakes_input.weight * Car::BRAKING_FACTOR;
         self.velocity += brake_friction * dt;
 
-        let normal_fric: Vec2 = -self.velocity * FRIC_COEF_ROAD;
+        let normal_fric: Vec2 = -self.velocity * FRIC_COEF;
+
+        let perp_direction = self.direction.perp();
+        let lateral_velocity =
+            self.velocity.dot(perp_direction.normalize()) * perp_direction.normalize();
+        let lateral_fric = -lateral_velocity * LAT_FRIC_COEF;
 
         // apply frictions
         self.velocity += (normal_fric) * dt;
+        self.velocity += (lateral_fric) * dt; // apply lateral friction
         self.position += self.velocity * dt;
         self.update_pos(self.position.x, self.position.y);
 

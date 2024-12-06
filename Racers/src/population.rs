@@ -5,7 +5,7 @@ use macroquad::rand::gen_range;
 use std::fs::File;
 use std::io::prelude::*;
 
-pub const GENERATION_TIME: u32 = 750;
+pub const GENERATION_TIME: u32 = 1000;
 
 pub struct Population {
     generation: usize,
@@ -34,7 +34,7 @@ impl Population {
 
     pub fn draw(&self) {
         self.track.draw();
-        
+
         // find best performer
         let mut best_fitness = -1000000;
         let mut best_index = 0;
@@ -49,13 +49,11 @@ impl Population {
         for i in 0..self.cars.len() {
             let car = &self.cars[i];
             if i == best_index {
-                car.draw(true);
+                car.draw(false);
             } else {
                 car.draw(false);
-
             }
         }
-
     }
 
     pub fn update(&mut self) {
@@ -130,14 +128,6 @@ impl Population {
         let mut child_net = car1.brain.clone();
         let network2 = car2.brain.clone();
 
-        /*
-        let num_layers = child_net.layers.len();
-        let layer_crossover_point = gen_range(0, num_layers - 1);
-        for i in 0..=layer_crossover_point {
-            child_net.layers[i] = network2.layers[i].clone();
-        }
-        */
-
         // apply cross over
         for i in 0..child_net.layers.len() {
             let layer2 = network2.layers[i].clone();
@@ -165,6 +155,8 @@ impl Population {
             }
 
             // apply mutations
+            let child_layer = &mut child_net.layers[0];
+
             for row in child_layer.weights.iter_mut() {
                 for weight in row.iter_mut() {
                     if gen_range(0.0, 1.0) <= 0.02 {
