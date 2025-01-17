@@ -1,5 +1,4 @@
 use crate::network::*;
-use crate::population::GENERATION_TIME;
 use crate::utils::{find_line_eq, lerp, line_intersection, to_rad};
 use core::f32;
 use macroquad::prelude::*;
@@ -11,7 +10,20 @@ use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
 
 // consts
 const FRIC_COEF: f32 = 0.88;
-const LAT_FRIC_COEF: f32 = 0.9;
+const LAT_FRIC_COEF: f32 = 0.1;
+
+// fitness constannt
+const SECTOR_BONUS: i32 = 1000;
+const LAP_BONUS: i32 = 5000;
+const AVERAGE_SPEED_FACTOR: i32 = 5;
+const SECTOR_SPEED_MULTIPLIER: i32 = 50000;
+const BACK_SECTOR_PUNISHMENT: i32 = -1000;
+const BACK_LAP_PUNISHMENT: i32 = -5000;
+const CRASH_PUNISHMENT: i32 = -10000;
+
+// ai settings
+const NUM_RAYS: usize = 15;
+const AI_FOV: f32 = 200.0;
 
 // colours
 const TRANSPARENT_COLOUR: Color = color_u8!(255, 255, 255, 50);
@@ -43,12 +55,16 @@ pub struct Car {
     // others
     pub crashed: bool,
     pub fitness: i32,
+    pub number: usize,
+    pub just_lapped: bool,
 
     // stats
     cumulative_speed: f32,
-    timer: i32,
+    timer: i32, // sector timer
     prev_checkpoint: usize,
     pub laps: usize,
+    pub lap_time: usize, // keeps track of current lap time
+    lap_timer: usize,    // times the lap rather than sector
 }
 
 #[derive(Default, Clone, Copy)]
@@ -68,13 +84,12 @@ impl Car {
     pub const STEER_WEIGHT: f32 = PI / 6.0;
     pub const MASS: f32 = 40.0;
     pub const BRAKING_FACTOR: f32 = 0.9;
-    const RAYS: usize = 20;
 
-    pub fn new(start_pos: Vec2) -> Self {
+    pub fn new(start_pos: Vec2, number: usize) -> Self {
         // default car setup
         let mut brain = Network::new_empty();
         brain = brain
-            .add_layer(Layer::new_random(6 + Car::RAYS, 12, None))
+            .add_layer(Layer::new_random(6 + NUM_RAYS, 12, None))
             .add_layer(Layer::new_random(12, 8, None))
             .add_layer(Layer::new_random(8, 5, None))
             .add_layer(Layer::new_random(5, 3, Some(sigmoid)));
@@ -113,12 +128,16 @@ impl Car {
 
             crashed: false,
             fitness: 0,
+            number,
+            just_lapped: false,
 
             // stats
             cumulative_speed: 0.0,
             timer: 0,
             prev_checkpoint: 0,
             laps: 0,
+            lap_timer: 0,
+            lap_time: 0,
         };
         car.direction = Vec2::from_angle(car.angle);
         return car;
@@ -130,7 +149,7 @@ impl Car {
             draw_colour = TRANSPARENT_COLOUR;
         }
         if (best) {
-            draw_colour = color_u8!(255, 215, 0, 255);
+            draw_colour = color_u8!(255, 215, 0, 255); // goldish colour
         }
 
         // just draws to the screen
@@ -153,12 +172,12 @@ impl Car {
         if !self.crashed {
             // increase fitness while not crashed
             self.fitness += 1;
+        } else {
+            return;
         }
 
         self.cumulative_speed += self.velocity.length();
-
         let sector = self.get_sector(track);
-
         let last_sector = track.get_points().len() - 1;
 
         // if reached a NEXT checkpoint
@@ -166,43 +185,53 @@ impl Car {
             self.prev_checkpoint += 1;
             let sector_time: i32 = self.timer;
 
-            let speed_bonus = (60000.0 * (1.0 / (sector_time as f32).powf(2.0))) as i32;
-            self.fitness += 1000 + speed_bonus;
+            let speed_bonus =
+                (SECTOR_SPEED_MULTIPLIER as f32 * (1.0 / (sector_time as f32).powf(2.0))) as i32;
+
+            self.fitness += SECTOR_BONUS + speed_bonus;
             self.timer = 0;
         } else if (sector == 0 && self.prev_checkpoint == last_sector) {
             // done a lap
-            self.fitness += 2000; // bonus
             let sector_time = self.timer;
-            let speed_bonus = (60000.0 * (1.0 / (sector_time as f32).powf(1.5))) as i32;
-            self.fitness += speed_bonus;
-            //self.fitness += speed_bonus;
+
+            let speed_bonus =
+                (SECTOR_SPEED_MULTIPLIER as f32 * (1.0 / (sector_time as f32).powf(2.0))) as i32;
+
+            self.fitness += speed_bonus + LAP_BONUS;
+
             self.prev_checkpoint = 0;
 
             self.timer = 0;
-
+            self.lap_time = self.lap_timer;
+            self.lap_timer = 0;
+            self.just_lapped = true;
             self.laps += 1;
         } else {
             if self.prev_checkpoint == 0 && sector == last_sector as i32 {
                 // gone backwards past the finish line
+                // aka the car crashed
+                self.crashed = true;
                 self.timer = 0;
                 self.prev_checkpoint = last_sector;
-                self.fitness -= 10000; // DONT GO BACKWARDS
+                self.fitness += BACK_LAP_PUNISHMENT; // DONT GO BACKWARDS
             } else if sector < self.prev_checkpoint as i32 {
                 // going backwards
                 self.timer = 0;
                 self.prev_checkpoint = sector as usize;
-                self.fitness -= 10000;
+                self.fitness += BACK_SECTOR_PUNISHMENT;
             }
         }
     }
 
-    pub fn get_final_fitness(&self) -> i32 {
+    pub fn get_final_fitness(&self, ticks: u32) -> i32 {
         let mut fitness = self.fitness;
+
         if self.crashed {
-            fitness -= 50000;
+            fitness += CRASH_PUNISHMENT;
         }
-        let avg_speed = self.cumulative_speed as i32 / GENERATION_TIME as i32;
-        fitness += avg_speed * 3;
+
+        let avg_speed = self.cumulative_speed as i32 / ticks as i32;
+        fitness += avg_speed * AVERAGE_SPEED_FACTOR;
 
         return fitness;
     }
@@ -217,17 +246,16 @@ impl Car {
         self.rect.y = y;
     }
 
-    pub fn update(&mut self, track: &Track) {
+    pub fn update(&mut self, track: &Track, dt: f32) {
+        self.just_lapped = false;
         self.toll_fitness(track);
 
         if self.crashed == true {
             return;
         }
 
-        let dt = get_frame_time();
-
         // run the neural network with inputs
-        let rays = self.cast_rays(Car::RAYS, 200.0, track);
+        let rays = self.cast_rays(NUM_RAYS, AI_FOV, track);
         let velx_norm = self.velocity.x / Car::MAX_SPEED;
         let vely_norm = self.velocity.y / Car::MAX_SPEED;
         let accx_norm = self.acceleration.x / Car::MAX_ACC;
@@ -273,7 +301,7 @@ impl Car {
 
         // apply frictions
         self.velocity += (normal_fric) * dt;
-        self.velocity += (lateral_fric) * dt; // apply lateral friction
+        self.velocity += (lateral_fric); // apply lateral friction
         self.position += self.velocity * dt;
         self.update_pos(self.position.x, self.position.y);
 
@@ -284,6 +312,7 @@ impl Car {
 
         // increment time
         self.timer += 1;
+        self.lap_timer += 1;
     }
 
     pub fn get_sector(&self, track: &Track) -> i32 {

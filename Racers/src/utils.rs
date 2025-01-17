@@ -54,17 +54,8 @@ pub fn line_intersection(p1: Vec2, p2: Vec2, q1: Vec2, q2: Vec2) -> Option<Vec2>
     None
 }
 
-/*
-let s1 = self.rect.center();
-let s2 = s1 + ray_direction * WINDOW_WIDTH as f32 * 5.0;
-
-draw_line(s1.x, s1.y, s2.x, s2.y, 3.0, RED);
-
-
-let u = -(((s1.x - s2.x) * (s1.y - A.y) - (s1.y - s2.y) * (s1.x - A.x))
-    / ((s1.x - s2.x) * (A.y - B.y) - (s1.y - s2.y) * (A.x - B.x)));
-
-let point_intersection = vec2(A.x + u * (B.x - A.x), A.y + u * (B.y - A.y));
-if (0.0 <= u && u <= 1.0) && (0.0 <= t && t <= 1.0) {
-    draw_circle(point_intersection.x, point_intersection.y, 6.0, PINK);
-}*/
+pub fn repeat_space(n: usize) {
+    for i in 0..n {
+        print!(" ");
+    }
+}
